@@ -34,6 +34,7 @@ export function DealOptions() {
   const [quantity, setQuantity] = useState(1);
   const [selectedInSlots, setSelectedInSlots] = useState({});
   const [visibleSlots, setVisibleSlots] = useState({});
+  const [activeFlavourInSlot, setActiveFlavourInSlot] = useState({}); // { [slotId]: flavourGroup }
   const [totalPrice, setTotalPrice] = useState(parseFloat(basePrice));
 
   // Initialize visible slots and handle auto-selections
@@ -68,10 +69,10 @@ export function DealOptions() {
     let calc = parseFloat(basePrice);
 
     // Add any extra charges from selected items if applicable
-    // (Usually deals have fixed prices, but we'll sum up just in case)
     Object.values(selectedInSlots).forEach(item => {
-      // If items in deals have extra price, add it here
-      // calc += parseFloat(item.price || 0); 
+      if (item && item.extra_price) {
+        calc += parseFloat(item.extra_price);
+      }
     });
 
     setTotalPrice(calc * quantity);
@@ -86,6 +87,7 @@ export function DealOptions() {
       ...prev,
       [slotId]: product,
     }));
+    setActiveFlavourInSlot(prev => ({ ...prev, [slotId]: null }));
 
     // Auto-toggle logic: close current and open next
     const currentIdx = attached_items.findIndex(s => (s.id || `slot-${attached_items.indexOf(s)}`) === slotId);
@@ -103,6 +105,34 @@ export function DealOptions() {
         setVisibleSlots(prev => ({ ...prev, [slotId]: false }));
       }
     }
+  };
+
+  const handleFlavourSelect = (slotId, flavourGroup) => {
+    if (flavourGroup.items.length === 1) {
+      // Only one option, select it directly
+      handleProductSelect(slotId, flavourGroup.items[0]);
+    } else {
+      // Multiple options, show crust selection
+      setActiveFlavourInSlot(prev => ({ ...prev, [slotId]: flavourGroup }));
+    }
+  };
+
+  const groupItemsByFlavour = (items) => {
+    const groups = {};
+    items.forEach(item => {
+      const productName = item.product?.name || item.display_name.split(' ')[0] || 'Unknown';
+      const productId = item.product?.id || productName;
+      
+      if (!groups[productId]) {
+        groups[productId] = {
+          id: productId,
+          name: productName,
+          items: []
+        };
+      }
+      groups[productId].items.push(item);
+    });
+    return Object.values(groups);
   };
 
   const isAllSlotsFilled = attached_items.every((slot, index) => {
@@ -176,68 +206,94 @@ export function DealOptions() {
 
               {visibleSlots[sId] && (
                 <View style={styles.slotContent}>
-                  {slot.categories && slot.categories.length > 0 ? (
-                    slot.categories.map((cat) => (
-                      <View key={cat.id} style={styles.categoryGroup}>
-                        <Text style={styles.categoryTitle}>{cat.name}</Text>
-                        <View style={styles.itemGrid}>
-                          {(cat.products || cat.items || []).map((prod) => {
-                            const isSelected = selectedInSlots[sId]?.id === prod.id;
-                            return (
-                              <TouchableOpacity
-                                key={prod.id}
-                                style={[
-                                  styles.itemCard,
-                                  isSelected && styles.itemCardSelected
-                                ]}
-                                onPress={() => handleProductSelect(sId, prod)}
-                              >
-                                <Text style={[
-                                  styles.itemLabel,
-                                  isSelected && styles.itemLabelSelected
-                                ]}>
-                                  {prod.name || prod.display_name || prod.title || 'Option'}
-                                </Text>
-                                {isSelected && (
-                                  <View style={styles.checkBadge}>
-                                    <Check size={10} color="#fff" />
-                                  </View>
-                                )}
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    ))
-                  ) : (
-                    <View style={styles.itemGrid}>
-                      {(slot.products || slot.items || []).map((prod) => {
-                        const isSelected = selectedInSlots[sId]?.id === prod.id;
-                        return (
-                          <TouchableOpacity
-                            key={prod.id}
-                            style={[
-                              styles.itemCard,
-                              isSelected && styles.itemCardSelected
-                            ]}
-                            onPress={() => handleProductSelect(sId, prod)}
+                  {(() => {
+                    const allProducts = (slot.categories && slot.categories.length > 0)
+                      ? slot.categories.flatMap(cat => cat.products || cat.items || [])
+                      : (slot.products || slot.items || slot.deal_products || []);
+                    
+                    const flavourGroups = groupItemsByFlavour(allProducts);
+                    const activeFlavour = activeFlavourInSlot[sId];
+
+                    if (activeFlavour) {
+                      return (
+                        <View>
+                          <TouchableOpacity 
+                            style={styles.backButton}
+                            onPress={() => setActiveFlavourInSlot(prev => ({ ...prev, [sId]: null }))}
                           >
-                            <Text style={[
-                              styles.itemLabel,
-                              isSelected && styles.itemLabelSelected
-                            ]}>
-                              {prod.name || prod.display_name || prod.title || 'Option'}
-                            </Text>
-                            {isSelected && (
-                              <View style={styles.checkBadge}>
-                                <Check size={10} color="#fff" />
-                              </View>
-                            )}
+                            <Text style={styles.backButtonText}>← Back to flavours</Text>
                           </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
+                          <Text style={styles.subTitle}>Select Crust for {activeFlavour.name}</Text>
+                          <View style={styles.itemGrid}>
+                            {activeFlavour.items.map((prod) => {
+                              const isSelected = selectedInSlots[sId]?.id === prod.id;
+                              const crustName = prod.variant_items?.[0]?.name || prod.display_name.replace(activeFlavour.name, '').trim();
+                              
+                              return (
+                                <TouchableOpacity
+                                  key={prod.id}
+                                  style={[
+                                    styles.itemCard,
+                                    isSelected && styles.itemCardSelected
+                                  ]}
+                                  onPress={() => handleProductSelect(sId, prod)}
+                                >
+                                  <Text style={[
+                                    styles.itemLabel,
+                                    isSelected && styles.itemLabelSelected
+                                  ]}>
+                                    {crustName}
+                                  </Text>
+                                  {prod.extra_price > 0 && (
+                                    <Text style={styles.extraPriceText}>+ Rs {prod.extra_price}</Text>
+                                  )}
+                                  {isSelected && (
+                                    <View style={styles.checkBadge}>
+                                      <Check size={10} color="#fff" />
+                                    </View>
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      );
+                    }
+
+                    return (
+                      <View style={styles.itemGrid}>
+                        {flavourGroups.map((group) => {
+                          const isAnyItemSelected = group.items.some(item => selectedInSlots[sId]?.id === item.id);
+
+                          return (
+                            <TouchableOpacity
+                              key={group.id}
+                              style={[
+                                styles.itemCard,
+                                isAnyItemSelected && styles.itemCardSelected
+                              ]}
+                              onPress={() => handleFlavourSelect(sId, group)}
+                            >
+                              <Text style={[
+                                styles.itemLabel,
+                                isAnyItemSelected && styles.itemLabelSelected
+                              ]}>
+                                {group.name}
+                              </Text>
+                              {group.items.length > 1 && !isAnyItemSelected && (
+                                <Text style={styles.optionCountText}>{group.items.length} options</Text>
+                              )}
+                              {isAnyItemSelected && (
+                                <View style={styles.checkBadge}>
+                                  <Check size={10} color="#fff" />
+                                </View>
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    );
+                  })()}
                 </View>
               )}
             </View>
@@ -399,6 +455,34 @@ const getStyles = theme => StyleSheet.create({
   },
   itemLabelSelected: {
     color: theme.colors.primary,
+  },
+  optionCountText: {
+    fontSize: 10,
+    color: theme.colors.primary,
+    opacity: 0.8,
+    marginTop: 2,
+    fontWeight: '700',
+  },
+  subTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginBottom: 12,
+  },
+  backButton: {
+    marginBottom: 12,
+    paddingVertical: 4,
+  },
+  backButtonText: {
+    fontSize: 14,
+    color: theme.colors.primary,
+    fontWeight: '700',
+  },
+  extraPriceText: {
+    fontSize: 11,
+    color: theme.colors.primary,
+    fontWeight: '700',
+    marginTop: 2,
   },
   checkBadge: {
     position: 'absolute',
