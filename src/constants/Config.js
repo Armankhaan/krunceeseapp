@@ -5,11 +5,11 @@
  */
 export const Config = {
   // Brand & Company Configuration
-  COMPANY_ID: 2,
+  COMPANY_ID: 3,
 
   // Default branch to load if no branch is selected or on first load
-  DEFAULT_BRANCH_ID: 1,
-  DEFAULT_BRANCH_NAME: "KRC Hussain chowk Branch",
+  DEFAULT_BRANCH_ID: 6,
+  DEFAULT_BRANCH_NAME: "PAPA JOHNS GULBERG BRANCH",
 
   // Administrative Credentials for loginStub (Development/Testing)
   ADMIN_USERNAME: 'admin',
